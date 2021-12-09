@@ -1,12 +1,14 @@
 # Raw data source #
 ###################
 *.xlsx
+*.xls
 *.csv
 *.dat
 *.npz
 *.svg
 *.png
 *.jpg
+*.pdf
 *.v2
 *.h264
 .ipynb_checkpoints/
