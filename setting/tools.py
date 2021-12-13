@@ -38,37 +38,49 @@ class ModelRerunner(object):
     
     
 class ObjectiveFunctionCalculator(object):
-    def __init__(self, target_params, target_obj, params, wdp, agro, observations, fixed_params=None):
-        self.fixed = fixed_params
-        self.target_params = target_params
-        self.target_obj = target_obj
-        self.modelrerunner = ModelRerunner(self.fixed, params, wdp, agro)
-        self.df_obs = observations
-        self.df_sim = None
+    def __init__(self, target_params, target_obj, params, wdp, agro, observations, minmax=[], fixed_params=None):
+        self.fp = fixed_params
+        self.tp = target_params
+        self.to = target_obj
+        self.mr = ModelRerunner(self.fp, params, wdp, agro)
+        self.obs = observations
+        self.mm = minmax
+        self.sim = None
         self.params_change = None
         self.n_calls = 0
         self.loss = None
         
-        self.df_obs = self.df_obs.loc[self.df_obs.index, self.target_obj]
+        self.true = self.obs.loc[self.obs.index, self.to]
+        if len(self.mm):
+            self.true = ((self.true - self.mm['min'])/(self.mm['max'] - self.mm['min'])).values
        
-    def __call__(self, input_params):
+    def __call__(self, input_params, is_train=True):
         self.n_calls += 1
         par_values = {}
-        for key in self.target_params:
-            TARGET = [x for x in input_params.keys() if x.startswith(key)]
-            if len(TARGET) == 1:
-                par_values[key] = input_params[key]
-            else:
-                temp_list = []
-                for v1, v2 in zip(np.linspace(0.0, 2.0, len(TARGET)), [input_params[_] for _ in TARGET]):
-                    temp_list.append(v1)
-                    temp_list.append(v2)
-                par_values[key] = temp_list
-        self.params_change = par_values
-        self.df_sim = self.modelrerunner(self.params_change)
-        diffs = self.df_sim.loc[self.df_obs.index, self.target_obj]
-        diffs = self.df_obs.values - diffs.values
-        diffs = diffs/np.array([1000, 0.7])
-        self.loss = np.mean(diffs**2) # MSE
+        if is_train:
+            for k in self.tp:
+                if not k.endswith('TB'):
+                    par_values[k] = input_params[k]
+                else:
+                    temp_list = []
+                    for v1, v2 in zip(np.linspace(self.tp[k][-1][0], self.tp[k][-1][1], self.tp[k][2]),
+                                      [_ for _ in input_params if _.startswith(k)]):
+                        temp_list.append(v1)
+                        temp_list.append(input_params[v2])
+                    par_values[k] = temp_list
+            self.params_change = par_values
+            self.sim = self.mr(self.params_change)
+            self.pred = self.sim.loc[self.obs.index, self.to]
+            if len(self.mm):
+                self.pred = ((self.pred - self.mm['min'])/(self.mm['max'] - self.mm['min'])).values
+            self.loss = mean_squared_error(self.true, self.pred)
 
-        return self.loss
+            return self.loss
+        
+        else:
+            self.sim = self.mr(input_params)
+            self.pred = self.sim.loc[self.obs.index, self.to]
+            if len(self.mm):
+                self.pred = ((self.pred - self.mm['min'])/(self.mm['max'] - self.mm['min'])).values
+            
+            return mean_squared_error(self.true, self.pred)
